@@ -1,95 +1,67 @@
-Shader "FX/Water (simple)" {
+Shader "Hidden/Particles/Alpha Blended +100" {
 Properties {
-	_horizonColor ("Horizon color", COLOR)  = ( .172 , .463 , .435 , 0)
-	_WaveScale ("Wave scale", Range (0.02,0.15)) = .07
-	_ColorControl ("Reflective color (RGB) fresnel (A) ", 2D) = "" { }
-	_ColorControlCube ("Reflective color cube (RGB) fresnel (A) ", Cube) = "" { TexGen CubeReflect }
-	_BumpMap ("Waves Normalmap ", 2D) = "" { }
-	WaveSpeed ("Wave speed (map1 x,y; map2 x,y)", Vector) = (19,9,-16,-7)
-	_MainTex ("Fallback texture", 2D) = "" { }
+	_TintColor ("Tint Color", Color) = (0.5,0.5,0.5,0.5)
+	_MainTex ("Particle Texture", 2D) = "white" {}
 }
 
-#LINE 54
-
+Category {
+	Tags { "Queue"="Transparent +100" "IgnoreProjector"="True" "RenderType"="Transparent" }
+	Blend SrcAlpha OneMinusSrcAlpha
+	AlphaTest Greater .01
+	ColorMask RGB
+	Cull Off Lighting Off ZWrite Off Fog { Color (0,0,0,0) }
+	BindChannels {
+		Bind "Color", color
+		Bind "Vertex", vertex
+		Bind "TexCoord", texcoord
+	}
 	
-// -----------------------------------------------------------
-// Fragment program
-
-Subshader {
-	Tags { "RenderType"="Opaque" }
-	Pass {
-
-Program "vp" {
+	// ---- Fragment program cards
+	SubShader {
+		Pass {
+		
+			Program "vp" {
 // Vertex combos: 1
-//   opengl - ALU: 18 to 18
-//   d3d9 - ALU: 18 to 18
-//   d3d11 - ALU: 16 to 16, TEX: 0 to 0, FLOW: 1 to 1
-//   d3d11_9x - ALU: 16 to 16, TEX: 0 to 0, FLOW: 1 to 1
+//   opengl - ALU: 6 to 6
+//   d3d9 - ALU: 6 to 6
+//   d3d11 - ALU: 5 to 5, TEX: 0 to 0, FLOW: 1 to 1
+//   d3d11_9x - ALU: 5 to 5, TEX: 0 to 0, FLOW: 1 to 1
 SubProgram "opengl " {
 Keywords { }
 Bind "vertex" Vertex
-Vector 9 [_WorldSpaceCameraPos]
-Matrix 5 [_World2Object]
-Vector 10 [unity_Scale]
-Float 11 [_WaveScale]
-Vector 12 [_WaveOffset]
+Bind "color" Color
+Bind "texcoord" TexCoord0
+Vector 5 [_MainTex_ST]
 "!!ARBvp1.0
-# 18 ALU
-PARAM c[13] = { { 0.40000001, 0.44999999, 1 },
+# 6 ALU
+PARAM c[6] = { program.local[0],
 		state.matrix.mvp,
-		program.local[5..12] };
-TEMP R0;
-TEMP R1;
-MOV R1.w, c[0].z;
-MOV R1.xyz, c[9];
-DP4 R0.z, R1, c[7];
-DP4 R0.x, R1, c[5];
-DP4 R0.y, R1, c[6];
-MAD R1.xyz, R0, c[10].w, -vertex.position;
-DP3 R0.x, R1, R1;
-RSQ R1.w, R0.x;
-RCP R0.z, c[10].w;
-MUL R0.xy, vertex.position.xzzw, c[11].x;
-MAD R0, R0.xyxy, R0.z, c[12];
-MUL result.texcoord[2].xyz, R1.w, R1.xzyw;
-MUL result.texcoord[0].xy, R0, c[0];
-MOV result.texcoord[1].xy, R0.wzzw;
+		program.local[5] };
+MOV result.color, vertex.color;
+MAD result.texcoord[0].xy, vertex.texcoord[0], c[5], c[5].zwzw;
 DP4 result.position.w, vertex.position, c[4];
 DP4 result.position.z, vertex.position, c[3];
 DP4 result.position.y, vertex.position, c[2];
 DP4 result.position.x, vertex.position, c[1];
 END
-# 18 instructions, 2 R-regs
+# 6 instructions, 0 R-regs
 "
 }
 
 SubProgram "d3d9 " {
 Keywords { }
 Bind "vertex" Vertex
+Bind "color" Color
+Bind "texcoord" TexCoord0
 Matrix 0 [glstate_matrix_mvp]
-Vector 8 [_WorldSpaceCameraPos]
-Matrix 4 [_World2Object]
-Vector 9 [unity_Scale]
-Float 10 [_WaveScale]
-Vector 11 [_WaveOffset]
+Vector 4 [_MainTex_ST]
 "vs_2_0
-; 18 ALU
-def c12, 0.40000001, 0.44999999, 1.00000000, 0
+; 6 ALU
 dcl_position0 v0
-mov r1.w, c12.z
-mov r1.xyz, c8
-dp4 r0.z, r1, c6
-dp4 r0.x, r1, c4
-dp4 r0.y, r1, c5
-mad r1.xyz, r0, c9.w, -v0
-dp3 r0.x, r1, r1
-rsq r1.w, r0.x
-rcp r0.z, c9.w
-mul r0.xy, v0.xzzw, c10.x
-mad r0, r0.xyxy, r0.z, c11
-mul oT2.xyz, r1.w, r1.xzyw
-mul oT0.xy, r0, c12
-mov oT1.xy, r0.wzzw
+dcl_color0 v1
+dcl_texcoord0 v2
+mov oD0, v1
+mad oT0.xy, v2, c4, c4.zwzw
 dp4 oPos.w, v0, c3
 dp4 oPos.z, v0, c2
 dp4 oPos.y, v0, c1
@@ -100,54 +72,39 @@ dp4 oPos.x, v0, c0
 SubProgram "d3d11 " {
 Keywords { }
 Bind "vertex" Vertex
-ConstBuffer "$Globals" 80 // 80 used size, 5 vars
-Float 48 [_WaveScale]
-Vector 64 [_WaveOffset] 4
-ConstBuffer "UnityPerCamera" 128 // 76 used size, 8 vars
-Vector 64 [_WorldSpaceCameraPos] 3
-ConstBuffer "UnityPerDraw" 336 // 336 used size, 6 vars
+Bind "color" Color
+Bind "texcoord" TexCoord0
+ConstBuffer "$Globals" 48 // 48 used size, 3 vars
+Vector 32 [_MainTex_ST] 4
+ConstBuffer "UnityPerDraw" 336 // 64 used size, 6 vars
 Matrix 0 [glstate_matrix_mvp] 4
-Matrix 256 [_World2Object] 4
-Vector 320 [unity_Scale] 4
 BindCB "$Globals" 0
-BindCB "UnityPerCamera" 1
-BindCB "UnityPerDraw" 2
-// 18 instructions, 1 temp regs, 0 temp arrays:
-// ALU 16 float, 0 int, 0 uint
+BindCB "UnityPerDraw" 1
+// 7 instructions, 1 temp regs, 0 temp arrays:
+// ALU 5 float, 0 int, 0 uint
 // TEX 0 (0 load, 0 comp, 0 bias, 0 grad)
 // FLOW 1 static, 0 dynamic
 "vs_4_0
-eefiecedjkmljcdgdegfeceblloobmhmhepaloopabaaaaaaniadaaaaadaaaaaa
-cmaaaaaahmaaaaaaaeabaaaaejfdeheoeiaaaaaaacaaaaaaaiaaaaaadiaaaaaa
-aaaaaaaaaaaaaaaaadaaaaaaaaaaaaaaapapaaaaebaaaaaaaaaaaaaaaaaaaaaa
-adaaaaaaabaaaaaaahaaaaaafaepfdejfeejepeoaaeoepfcenebemaaepfdeheo
-iaaaaaaaaeaaaaaaaiaaaaaagiaaaaaaaaaaaaaaabaaaaaaadaaaaaaaaaaaaaa
-apaaaaaaheaaaaaaaaaaaaaaaaaaaaaaadaaaaaaabaaaaaaadamaaaaheaaaaaa
-abaaaaaaaaaaaaaaadaaaaaaacaaaaaaadamaaaaheaaaaaaacaaaaaaaaaaaaaa
-adaaaaaaadaaaaaaahaiaaaafdfgfpfaepfdejfeejepeoaafeeffiedepepfcee
-aaklklklfdeieefcmmacaaaaeaaaabaaldaaaaaafjaaaaaeegiocaaaaaaaaaaa
-afaaaaaafjaaaaaeegiocaaaabaaaaaaafaaaaaafjaaaaaeegiocaaaacaaaaaa
-bfaaaaaafpaaaaadpcbabaaaaaaaaaaaghaaaaaepccabaaaaaaaaaaaabaaaaaa
-gfaaaaaddccabaaaabaaaaaagfaaaaaddccabaaaacaaaaaagfaaaaadhccabaaa
-adaaaaaagiaaaaacabaaaaaadiaaaaaipcaabaaaaaaaaaaafgbfbaaaaaaaaaaa
-egiocaaaacaaaaaaabaaaaaadcaaaaakpcaabaaaaaaaaaaaegiocaaaacaaaaaa
-aaaaaaaaagbabaaaaaaaaaaaegaobaaaaaaaaaaadcaaaaakpcaabaaaaaaaaaaa
-egiocaaaacaaaaaaacaaaaaakgbkbaaaaaaaaaaaegaobaaaaaaaaaaadcaaaaak
-pccabaaaaaaaaaaaegiocaaaacaaaaaaadaaaaaapgbpbaaaaaaaaaaaegaobaaa
-aaaaaaaadiaaaaaipcaabaaaaaaaaaaaigbibaaaaaaaaaaaagiacaaaaaaaaaaa
-adaaaaaaaoaaaaaipcaabaaaaaaaaaaaegaobaaaaaaaaaaapgipcaaaacaaaaaa
-beaaaaaaaaaaaaaipcaabaaaaaaaaaaaegaobaaaaaaaaaaaegiocaaaaaaaaaaa
-aeaaaaaadiaaaaakdccabaaaabaaaaaaegaabaaaaaaaaaaaaceaaaaamnmmmmdo
-ggggogdoaaaaaaaaaaaaaaaadgaaaaafdccabaaaacaaaaaalgapbaaaaaaaaaaa
-diaaaaajhcaabaaaaaaaaaaafgifcaaaabaaaaaaaeaaaaaaigibcaaaacaaaaaa
-bbaaaaaadcaaaaalhcaabaaaaaaaaaaaigibcaaaacaaaaaabaaaaaaaagiacaaa
-abaaaaaaaeaaaaaaegacbaaaaaaaaaaadcaaaaalhcaabaaaaaaaaaaaigibcaaa
-acaaaaaabcaaaaaakgikcaaaabaaaaaaaeaaaaaaegacbaaaaaaaaaaaaaaaaaai
-hcaabaaaaaaaaaaaegacbaaaaaaaaaaaigibcaaaacaaaaaabdaaaaaadcaaaaal
-hcaabaaaaaaaaaaaegacbaaaaaaaaaaapgipcaaaacaaaaaabeaaaaaaigbbbaia
-ebaaaaaaaaaaaaaabaaaaaahicaabaaaaaaaaaaaegacbaaaaaaaaaaaegacbaaa
-aaaaaaaaeeaaaaaficaabaaaaaaaaaaadkaabaaaaaaaaaaadiaaaaahhccabaaa
-adaaaaaapgapbaaaaaaaaaaaegacbaaaaaaaaaaadoaaaaab"
+eefieceddoellgnlfilkjcnhpflcklipjanghigmabaaaaaahaacaaaaadaaaaaa
+cmaaaaaajmaaaaaabaabaaaaejfdeheogiaaaaaaadaaaaaaaiaaaaaafaaaaaaa
+aaaaaaaaaaaaaaaaadaaaaaaaaaaaaaaapapaaaafjaaaaaaaaaaaaaaaaaaaaaa
+adaaaaaaabaaaaaaapapaaaafpaaaaaaaaaaaaaaaaaaaaaaadaaaaaaacaaaaaa
+adadaaaafaepfdejfeejepeoaaedepemepfcaafeeffiedepepfceeaaepfdeheo
+gmaaaaaaadaaaaaaaiaaaaaafaaaaaaaaaaaaaaaabaaaaaaadaaaaaaaaaaaaaa
+apaaaaaafmaaaaaaaaaaaaaaaaaaaaaaadaaaaaaabaaaaaaapaaaaaagcaaaaaa
+aaaaaaaaaaaaaaaaadaaaaaaacaaaaaaadamaaaafdfgfpfagphdgjhegjgpgoaa
+edepemepfcaafeeffiedepepfceeaaklfdeieefcfiabaaaaeaaaabaafgaaaaaa
+fjaaaaaeegiocaaaaaaaaaaaadaaaaaafjaaaaaeegiocaaaabaaaaaaaeaaaaaa
+fpaaaaadpcbabaaaaaaaaaaafpaaaaadpcbabaaaabaaaaaafpaaaaaddcbabaaa
+acaaaaaaghaaaaaepccabaaaaaaaaaaaabaaaaaagfaaaaadpccabaaaabaaaaaa
+gfaaaaaddccabaaaacaaaaaagiaaaaacabaaaaaadiaaaaaipcaabaaaaaaaaaaa
+fgbfbaaaaaaaaaaaegiocaaaabaaaaaaabaaaaaadcaaaaakpcaabaaaaaaaaaaa
+egiocaaaabaaaaaaaaaaaaaaagbabaaaaaaaaaaaegaobaaaaaaaaaaadcaaaaak
+pcaabaaaaaaaaaaaegiocaaaabaaaaaaacaaaaaakgbkbaaaaaaaaaaaegaobaaa
+aaaaaaaadcaaaaakpccabaaaaaaaaaaaegiocaaaabaaaaaaadaaaaaapgbpbaaa
+aaaaaaaaegaobaaaaaaaaaaadgaaaaafpccabaaaabaaaaaaegbobaaaabaaaaaa
+dcaaaaaldccabaaaacaaaaaaegbabaaaacaaaaaaegiacaaaaaaaaaaaacaaaaaa
+ogikcaaaaaaaaaaaacaaaaaadoaaaaab"
 }
 
 SubProgram "gles " {
@@ -157,27 +114,18 @@ Keywords { }
 
 #ifdef VERTEX
 
-varying highp vec3 xlv_TEXCOORD2;
-varying highp vec2 xlv_TEXCOORD0_1;
 varying highp vec2 xlv_TEXCOORD0;
-uniform highp vec4 _WaveOffset;
-uniform highp float _WaveScale;
-uniform highp vec4 unity_Scale;
-uniform highp mat4 _World2Object;
+varying highp vec4 xlv_COLOR;
+uniform highp vec4 _MainTex_ST;
 uniform highp mat4 glstate_matrix_mvp;
-uniform highp vec3 _WorldSpaceCameraPos;
+attribute vec4 _glesMultiTexCoord0;
+attribute vec4 _glesColor;
 attribute vec4 _glesVertex;
 void main ()
 {
-  highp vec4 temp_1;
-  temp_1 = (((_glesVertex.xzxz * _WaveScale) / unity_Scale.w) + _WaveOffset);
-  highp vec4 tmpvar_2;
-  tmpvar_2.w = 1.0;
-  tmpvar_2.xyz = _WorldSpaceCameraPos;
   gl_Position = (glstate_matrix_mvp * _glesVertex);
-  xlv_TEXCOORD0 = (temp_1.xy * vec2(0.4, 0.45));
-  xlv_TEXCOORD0_1 = temp_1.wz;
-  xlv_TEXCOORD2 = normalize((((_World2Object * tmpvar_2).xyz * unity_Scale.w) - _glesVertex.xyz)).xzy;
+  xlv_COLOR = _glesColor;
+  xlv_TEXCOORD0 = ((_glesMultiTexCoord0.xy * _MainTex_ST.xy) + _MainTex_ST.zw);
 }
 
 
@@ -185,40 +133,17 @@ void main ()
 #endif
 #ifdef FRAGMENT
 
-varying highp vec3 xlv_TEXCOORD2;
-varying highp vec2 xlv_TEXCOORD0_1;
 varying highp vec2 xlv_TEXCOORD0;
-uniform sampler2D _ColorControl;
-uniform sampler2D _BumpMap;
-uniform highp vec4 _horizonColor;
+varying highp vec4 xlv_COLOR;
+uniform highp vec4 _TintColor;
+uniform sampler2D _MainTex;
 void main ()
 {
-  mediump vec4 col_1;
-  mediump vec4 water_2;
-  mediump float fresnel_3;
-  mediump vec3 bump2_4;
-  mediump vec3 bump1_5;
-  lowp vec3 tmpvar_6;
-  tmpvar_6 = ((texture2D (_BumpMap, xlv_TEXCOORD0).xyz * 2.0) - 1.0);
-  bump1_5 = tmpvar_6;
-  lowp vec3 tmpvar_7;
-  tmpvar_7 = ((texture2D (_BumpMap, xlv_TEXCOORD0_1).xyz * 2.0) - 1.0);
-  bump2_4 = tmpvar_7;
-  mediump vec3 tmpvar_8;
-  tmpvar_8 = ((bump1_5 + bump2_4) * 0.5);
-  highp float tmpvar_9;
-  tmpvar_9 = dot (xlv_TEXCOORD2, tmpvar_8);
-  fresnel_3 = tmpvar_9;
-  lowp vec4 tmpvar_10;
-  tmpvar_10 = texture2D (_ColorControl, vec2(fresnel_3));
-  water_2 = tmpvar_10;
-  highp vec3 tmpvar_11;
-  tmpvar_11 = mix (water_2.xyz, _horizonColor.xyz, water_2.www);
-  col_1.xyz = tmpvar_11;
-  highp float tmpvar_12;
-  tmpvar_12 = _horizonColor.w;
-  col_1.w = tmpvar_12;
-  gl_FragData[0] = col_1;
+  mediump vec4 tmpvar_1;
+  lowp vec4 tmpvar_2;
+  tmpvar_2 = texture2D (_MainTex, xlv_TEXCOORD0);
+  tmpvar_1 = (((2.0 * xlv_COLOR) * _TintColor) * tmpvar_2);
+  gl_FragData[0] = tmpvar_1;
 }
 
 
@@ -233,27 +158,18 @@ Keywords { }
 
 #ifdef VERTEX
 
-varying highp vec3 xlv_TEXCOORD2;
-varying highp vec2 xlv_TEXCOORD0_1;
 varying highp vec2 xlv_TEXCOORD0;
-uniform highp vec4 _WaveOffset;
-uniform highp float _WaveScale;
-uniform highp vec4 unity_Scale;
-uniform highp mat4 _World2Object;
+varying highp vec4 xlv_COLOR;
+uniform highp vec4 _MainTex_ST;
 uniform highp mat4 glstate_matrix_mvp;
-uniform highp vec3 _WorldSpaceCameraPos;
+attribute vec4 _glesMultiTexCoord0;
+attribute vec4 _glesColor;
 attribute vec4 _glesVertex;
 void main ()
 {
-  highp vec4 temp_1;
-  temp_1 = (((_glesVertex.xzxz * _WaveScale) / unity_Scale.w) + _WaveOffset);
-  highp vec4 tmpvar_2;
-  tmpvar_2.w = 1.0;
-  tmpvar_2.xyz = _WorldSpaceCameraPos;
   gl_Position = (glstate_matrix_mvp * _glesVertex);
-  xlv_TEXCOORD0 = (temp_1.xy * vec2(0.4, 0.45));
-  xlv_TEXCOORD0_1 = temp_1.wz;
-  xlv_TEXCOORD2 = normalize((((_World2Object * tmpvar_2).xyz * unity_Scale.w) - _glesVertex.xyz)).xzy;
+  xlv_COLOR = _glesColor;
+  xlv_TEXCOORD0 = ((_glesMultiTexCoord0.xy * _MainTex_ST.xy) + _MainTex_ST.zw);
 }
 
 
@@ -261,42 +177,17 @@ void main ()
 #endif
 #ifdef FRAGMENT
 
-varying highp vec3 xlv_TEXCOORD2;
-varying highp vec2 xlv_TEXCOORD0_1;
 varying highp vec2 xlv_TEXCOORD0;
-uniform sampler2D _ColorControl;
-uniform sampler2D _BumpMap;
-uniform highp vec4 _horizonColor;
+varying highp vec4 xlv_COLOR;
+uniform highp vec4 _TintColor;
+uniform sampler2D _MainTex;
 void main ()
 {
-  mediump vec4 col_1;
-  mediump vec4 water_2;
-  mediump float fresnel_3;
-  mediump vec3 bump2_4;
-  mediump vec3 bump1_5;
-  lowp vec3 normal_6;
-  normal_6.xy = ((texture2D (_BumpMap, xlv_TEXCOORD0).wy * 2.0) - 1.0);
-  normal_6.z = sqrt((1.0 - clamp (dot (normal_6.xy, normal_6.xy), 0.0, 1.0)));
-  bump1_5 = normal_6;
-  lowp vec3 normal_7;
-  normal_7.xy = ((texture2D (_BumpMap, xlv_TEXCOORD0_1).wy * 2.0) - 1.0);
-  normal_7.z = sqrt((1.0 - clamp (dot (normal_7.xy, normal_7.xy), 0.0, 1.0)));
-  bump2_4 = normal_7;
-  mediump vec3 tmpvar_8;
-  tmpvar_8 = ((bump1_5 + bump2_4) * 0.5);
-  highp float tmpvar_9;
-  tmpvar_9 = dot (xlv_TEXCOORD2, tmpvar_8);
-  fresnel_3 = tmpvar_9;
-  lowp vec4 tmpvar_10;
-  tmpvar_10 = texture2D (_ColorControl, vec2(fresnel_3));
-  water_2 = tmpvar_10;
-  highp vec3 tmpvar_11;
-  tmpvar_11 = mix (water_2.xyz, _horizonColor.xyz, water_2.www);
-  col_1.xyz = tmpvar_11;
-  highp float tmpvar_12;
-  tmpvar_12 = _horizonColor.w;
-  col_1.w = tmpvar_12;
-  gl_FragData[0] = col_1;
+  mediump vec4 tmpvar_1;
+  lowp vec4 tmpvar_2;
+  tmpvar_2 = texture2D (_MainTex, xlv_TEXCOORD0);
+  tmpvar_1 = (((2.0 * xlv_COLOR) * _TintColor) * tmpvar_2);
+  gl_FragData[0] = tmpvar_1;
 }
 
 
@@ -307,108 +198,67 @@ void main ()
 SubProgram "flash " {
 Keywords { }
 Bind "vertex" Vertex
+Bind "color" Color
+Bind "texcoord" TexCoord0
 Matrix 0 [glstate_matrix_mvp]
-Vector 8 [_WorldSpaceCameraPos]
-Matrix 4 [_World2Object]
-Vector 9 [unity_Scale]
-Float 10 [_WaveScale]
-Vector 11 [_WaveOffset]
+Vector 4 [_MainTex_ST]
 "agal_vs
-c12 0.4 0.45 1.0 0.0
 [bc]
-aaaaaaaaabaaaiacamaaaakkabaaaaaaaaaaaaaaaaaaaaaa mov r1.w, c12.z
-aaaaaaaaabaaahacaiaaaaoeabaaaaaaaaaaaaaaaaaaaaaa mov r1.xyz, c8
-bdaaaaaaaaaaaeacabaaaaoeacaaaaaaagaaaaoeabaaaaaa dp4 r0.z, r1, c6
-bdaaaaaaaaaaabacabaaaaoeacaaaaaaaeaaaaoeabaaaaaa dp4 r0.x, r1, c4
-bdaaaaaaaaaaacacabaaaaoeacaaaaaaafaaaaoeabaaaaaa dp4 r0.y, r1, c5
-adaaaaaaacaaahacaaaaaakeacaaaaaaajaaaappabaaaaaa mul r2.xyz, r0.xyzz, c9.w
-acaaaaaaabaaahacacaaaakeacaaaaaaaaaaaaoeaaaaaaaa sub r1.xyz, r2.xyzz, a0
-bcaaaaaaaaaaabacabaaaakeacaaaaaaabaaaakeacaaaaaa dp3 r0.x, r1.xyzz, r1.xyzz
-akaaaaaaabaaaiacaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaa rsq r1.w, r0.x
-aaaaaaaaacaaapacajaaaaoeabaaaaaaaaaaaaaaaaaaaaaa mov r2, c9
-afaaaaaaaaaaaeacacaaaappacaaaaaaaaaaaaaaaaaaaaaa rcp r0.z, r2.w
-adaaaaaaaaaaadacaaaaaaoiaaaaaaaaakaaaaaaabaaaaaa mul r0.xy, a0.xzzw, c10.x
-adaaaaaaaaaaapacaaaaaaeeacaaaaaaaaaaaakkacaaaaaa mul r0, r0.xyxy, r0.z
-abaaaaaaaaaaapacaaaaaaoeacaaaaaaalaaaaoeabaaaaaa add r0, r0, c11
-adaaaaaaacaaahaeabaaaappacaaaaaaabaaaafiacaaaaaa mul v2.xyz, r1.w, r1.xzyy
-adaaaaaaaaaaadaeaaaaaafeacaaaaaaamaaaaoeabaaaaaa mul v0.xy, r0.xyyy, c12
-aaaaaaaaabaaadaeaaaaaaklacaaaaaaaaaaaaaaaaaaaaaa mov v1.xy, r0.wzzz
+aaaaaaaaahaaapaeacaaaaoeaaaaaaaaaaaaaaaaaaaaaaaa mov v7, a2
+adaaaaaaaaaaadacadaaaaoeaaaaaaaaaeaaaaoeabaaaaaa mul r0.xy, a3, c4
+abaaaaaaaaaaadaeaaaaaafeacaaaaaaaeaaaaooabaaaaaa add v0.xy, r0.xyyy, c4.zwzw
 bdaaaaaaaaaaaiadaaaaaaoeaaaaaaaaadaaaaoeabaaaaaa dp4 o0.w, a0, c3
 bdaaaaaaaaaaaeadaaaaaaoeaaaaaaaaacaaaaoeabaaaaaa dp4 o0.z, a0, c2
 bdaaaaaaaaaaacadaaaaaaoeaaaaaaaaabaaaaoeabaaaaaa dp4 o0.y, a0, c1
 bdaaaaaaaaaaabadaaaaaaoeaaaaaaaaaaaaaaoeabaaaaaa dp4 o0.x, a0, c0
 aaaaaaaaaaaaamaeaaaaaaoeabaaaaaaaaaaaaaaaaaaaaaa mov v0.zw, c0
-aaaaaaaaabaaamaeaaaaaaoeabaaaaaaaaaaaaaaaaaaaaaa mov v1.zw, c0
-aaaaaaaaacaaaiaeaaaaaaoeabaaaaaaaaaaaaaaaaaaaaaa mov v2.w, c0
 "
 }
 
 SubProgram "d3d11_9x " {
 Keywords { }
 Bind "vertex" Vertex
-ConstBuffer "$Globals" 80 // 80 used size, 5 vars
-Float 48 [_WaveScale]
-Vector 64 [_WaveOffset] 4
-ConstBuffer "UnityPerCamera" 128 // 76 used size, 8 vars
-Vector 64 [_WorldSpaceCameraPos] 3
-ConstBuffer "UnityPerDraw" 336 // 336 used size, 6 vars
+Bind "color" Color
+Bind "texcoord" TexCoord0
+ConstBuffer "$Globals" 48 // 48 used size, 3 vars
+Vector 32 [_MainTex_ST] 4
+ConstBuffer "UnityPerDraw" 336 // 64 used size, 6 vars
 Matrix 0 [glstate_matrix_mvp] 4
-Matrix 256 [_World2Object] 4
-Vector 320 [unity_Scale] 4
 BindCB "$Globals" 0
-BindCB "UnityPerCamera" 1
-BindCB "UnityPerDraw" 2
-// 18 instructions, 1 temp regs, 0 temp arrays:
-// ALU 16 float, 0 int, 0 uint
+BindCB "UnityPerDraw" 1
+// 7 instructions, 1 temp regs, 0 temp arrays:
+// ALU 5 float, 0 int, 0 uint
 // TEX 0 (0 load, 0 comp, 0 bias, 0 grad)
 // FLOW 1 static, 0 dynamic
 "vs_4_0_level_9_1
-eefiecedegejjknomeflkcpfdpidckjfibochbhlabaaaaaaleafaaaaaeaaaaaa
-daaaaaaaaiacaaaanmaeaaaacmafaaaaebgpgodjnaabaaaanaabaaaaaaacpopp
-hiabaaaafiaaaaaaaeaaceaaaaaafeaaaaaafeaaaaaaceaaabaafeaaaaaaadaa
-acaaabaaaaaaaaaaabaaaeaaabaaadaaaaaaaaaaacaaaaaaaeaaaeaaaaaaaaaa
-acaabaaaafaaaiaaaaaaaaaaaaaaaaaaaaacpoppfbaaaaafanaaapkamnmmmmdo
-ggggogdoaaaaaaaaaaaaaaaabpaaaaacafaaaaiaaaaaapjaafaaaaadaaaaapia
-aaaaiijaabaaaakaagaaaaacabaaabiaamaappkaaeaaaaaeaaaaapiaaaaaoeia
-abaaaaiaacaaoekaafaaaaadaaaaadoaaaaaoeiaanaaoekaabaaaaacabaaadoa
-aaaaoliaabaaaaacaaaaahiaadaaoekaafaaaaadabaaahiaaaaaffiaajaanika
-aeaaaaaeaaaaaliaaiaagikaaaaaaaiaabaakeiaaeaaaaaeaaaaahiaakaanika
-aaaakkiaaaaapeiaacaaaaadaaaaahiaaaaaoeiaalaanikaaeaaaaaeaaaaahia
-aaaaoeiaamaappkaaaaanijbaiaaaaadaaaaaiiaaaaaoeiaaaaaoeiaahaaaaac
-aaaaaiiaaaaappiaafaaaaadacaaahoaaaaappiaaaaaoeiaafaaaaadaaaaapia
-aaaaffjaafaaoekaaeaaaaaeaaaaapiaaeaaoekaaaaaaajaaaaaoeiaaeaaaaae
-aaaaapiaagaaoekaaaaakkjaaaaaoeiaaeaaaaaeaaaaapiaahaaoekaaaaappja
-aaaaoeiaaeaaaaaeaaaaadmaaaaappiaaaaaoekaaaaaoeiaabaaaaacaaaaamma
-aaaaoeiappppaaaafdeieefcmmacaaaaeaaaabaaldaaaaaafjaaaaaeegiocaaa
-aaaaaaaaafaaaaaafjaaaaaeegiocaaaabaaaaaaafaaaaaafjaaaaaeegiocaaa
-acaaaaaabfaaaaaafpaaaaadpcbabaaaaaaaaaaaghaaaaaepccabaaaaaaaaaaa
-abaaaaaagfaaaaaddccabaaaabaaaaaagfaaaaaddccabaaaacaaaaaagfaaaaad
-hccabaaaadaaaaaagiaaaaacabaaaaaadiaaaaaipcaabaaaaaaaaaaafgbfbaaa
-aaaaaaaaegiocaaaacaaaaaaabaaaaaadcaaaaakpcaabaaaaaaaaaaaegiocaaa
-acaaaaaaaaaaaaaaagbabaaaaaaaaaaaegaobaaaaaaaaaaadcaaaaakpcaabaaa
-aaaaaaaaegiocaaaacaaaaaaacaaaaaakgbkbaaaaaaaaaaaegaobaaaaaaaaaaa
-dcaaaaakpccabaaaaaaaaaaaegiocaaaacaaaaaaadaaaaaapgbpbaaaaaaaaaaa
-egaobaaaaaaaaaaadiaaaaaipcaabaaaaaaaaaaaigbibaaaaaaaaaaaagiacaaa
-aaaaaaaaadaaaaaaaoaaaaaipcaabaaaaaaaaaaaegaobaaaaaaaaaaapgipcaaa
-acaaaaaabeaaaaaaaaaaaaaipcaabaaaaaaaaaaaegaobaaaaaaaaaaaegiocaaa
-aaaaaaaaaeaaaaaadiaaaaakdccabaaaabaaaaaaegaabaaaaaaaaaaaaceaaaaa
-mnmmmmdoggggogdoaaaaaaaaaaaaaaaadgaaaaafdccabaaaacaaaaaalgapbaaa
-aaaaaaaadiaaaaajhcaabaaaaaaaaaaafgifcaaaabaaaaaaaeaaaaaaigibcaaa
-acaaaaaabbaaaaaadcaaaaalhcaabaaaaaaaaaaaigibcaaaacaaaaaabaaaaaaa
-agiacaaaabaaaaaaaeaaaaaaegacbaaaaaaaaaaadcaaaaalhcaabaaaaaaaaaaa
-igibcaaaacaaaaaabcaaaaaakgikcaaaabaaaaaaaeaaaaaaegacbaaaaaaaaaaa
-aaaaaaaihcaabaaaaaaaaaaaegacbaaaaaaaaaaaigibcaaaacaaaaaabdaaaaaa
-dcaaaaalhcaabaaaaaaaaaaaegacbaaaaaaaaaaapgipcaaaacaaaaaabeaaaaaa
-igbbbaiaebaaaaaaaaaaaaaabaaaaaahicaabaaaaaaaaaaaegacbaaaaaaaaaaa
-egacbaaaaaaaaaaaeeaaaaaficaabaaaaaaaaaaadkaabaaaaaaaaaaadiaaaaah
-hccabaaaadaaaaaapgapbaaaaaaaaaaaegacbaaaaaaaaaaadoaaaaabejfdeheo
-eiaaaaaaacaaaaaaaiaaaaaadiaaaaaaaaaaaaaaaaaaaaaaadaaaaaaaaaaaaaa
-apapaaaaebaaaaaaaaaaaaaaaaaaaaaaadaaaaaaabaaaaaaahaaaaaafaepfdej
-feejepeoaaeoepfcenebemaaepfdeheoiaaaaaaaaeaaaaaaaiaaaaaagiaaaaaa
-aaaaaaaaabaaaaaaadaaaaaaaaaaaaaaapaaaaaaheaaaaaaaaaaaaaaaaaaaaaa
-adaaaaaaabaaaaaaadamaaaaheaaaaaaabaaaaaaaaaaaaaaadaaaaaaacaaaaaa
-adamaaaaheaaaaaaacaaaaaaaaaaaaaaadaaaaaaadaaaaaaahaiaaaafdfgfpfa
-epfdejfeejepeoaafeeffiedepepfceeaaklklkl"
+eefiecedaohmkcmlcibmkipbenhacfnehadnaapgabaaaaaaheadaaaaaeaaaaaa
+daaaaaaadaabaaaajaacaaaaaaadaaaaebgpgodjpiaaaaaapiaaaaaaaaacpopp
+liaaaaaaeaaaaaaaacaaceaaaaaadmaaaaaadmaaaaaaceaaabaadmaaaaaaacaa
+abaaabaaaaaaaaaaabaaaaaaaeaaacaaaaaaaaaaaaaaaaaaaaacpoppbpaaaaac
+afaaaaiaaaaaapjabpaaaaacafaaabiaabaaapjabpaaaaacafaaaciaacaaapja
+aeaaaaaeabaaadoaacaaoejaabaaoekaabaaookaafaaaaadaaaaapiaaaaaffja
+adaaoekaaeaaaaaeaaaaapiaacaaoekaaaaaaajaaaaaoeiaaeaaaaaeaaaaapia
+aeaaoekaaaaakkjaaaaaoeiaaeaaaaaeaaaaapiaafaaoekaaaaappjaaaaaoeia
+aeaaaaaeaaaaadmaaaaappiaaaaaoekaaaaaoeiaabaaaaacaaaaammaaaaaoeia
+abaaaaacaaaaapoaabaaoejappppaaaafdeieefcfiabaaaaeaaaabaafgaaaaaa
+fjaaaaaeegiocaaaaaaaaaaaadaaaaaafjaaaaaeegiocaaaabaaaaaaaeaaaaaa
+fpaaaaadpcbabaaaaaaaaaaafpaaaaadpcbabaaaabaaaaaafpaaaaaddcbabaaa
+acaaaaaaghaaaaaepccabaaaaaaaaaaaabaaaaaagfaaaaadpccabaaaabaaaaaa
+gfaaaaaddccabaaaacaaaaaagiaaaaacabaaaaaadiaaaaaipcaabaaaaaaaaaaa
+fgbfbaaaaaaaaaaaegiocaaaabaaaaaaabaaaaaadcaaaaakpcaabaaaaaaaaaaa
+egiocaaaabaaaaaaaaaaaaaaagbabaaaaaaaaaaaegaobaaaaaaaaaaadcaaaaak
+pcaabaaaaaaaaaaaegiocaaaabaaaaaaacaaaaaakgbkbaaaaaaaaaaaegaobaaa
+aaaaaaaadcaaaaakpccabaaaaaaaaaaaegiocaaaabaaaaaaadaaaaaapgbpbaaa
+aaaaaaaaegaobaaaaaaaaaaadgaaaaafpccabaaaabaaaaaaegbobaaaabaaaaaa
+dcaaaaaldccabaaaacaaaaaaegbabaaaacaaaaaaegiacaaaaaaaaaaaacaaaaaa
+ogikcaaaaaaaaaaaacaaaaaadoaaaaabejfdeheogiaaaaaaadaaaaaaaiaaaaaa
+faaaaaaaaaaaaaaaaaaaaaaaadaaaaaaaaaaaaaaapapaaaafjaaaaaaaaaaaaaa
+aaaaaaaaadaaaaaaabaaaaaaapapaaaafpaaaaaaaaaaaaaaaaaaaaaaadaaaaaa
+acaaaaaaadadaaaafaepfdejfeejepeoaaedepemepfcaafeeffiedepepfceeaa
+epfdeheogmaaaaaaadaaaaaaaiaaaaaafaaaaaaaaaaaaaaaabaaaaaaadaaaaaa
+aaaaaaaaapaaaaaafmaaaaaaaaaaaaaaaaaaaaaaadaaaaaaabaaaaaaapaaaaaa
+gcaaaaaaaaaaaaaaaaaaaaaaadaaaaaaacaaaaaaadamaaaafdfgfpfagphdgjhe
+gjgpgoaaedepemepfcaafeeffiedepepfceeaakl"
 }
 
 SubProgram "gles3 " {
@@ -420,8 +270,10 @@ Keywords { }
 
 #define gl_Vertex _glesVertex
 in vec4 _glesVertex;
-#define gl_Normal (normalize(_glesNormal))
-in vec3 _glesNormal;
+#define gl_Color _glesColor
+in vec4 _glesColor;
+#define gl_MultiTexCoord0 _glesMultiTexCoord0
+in vec4 _glesMultiTexCoord0;
 
 #line 151
 struct v2f_vertex_lit {
@@ -439,16 +291,17 @@ struct appdata_img {
     highp vec4 vertex;
     mediump vec2 texcoord;
 };
-#line 325
+#line 324
 struct v2f {
-    highp vec4 pos;
-    highp vec2 bumpuv[2];
-    highp vec3 viewDir;
-};
-#line 319
-struct appdata {
     highp vec4 vertex;
-    highp vec3 normal;
+    highp vec4 color;
+    highp vec2 texcoord;
+};
+#line 317
+struct appdata_t {
+    highp vec4 vertex;
+    highp vec4 color;
+    highp vec2 texcoord;
 };
 uniform highp vec4 _Time;
 uniform highp vec4 _SinTime;
@@ -540,46 +393,32 @@ uniform lowp vec4 unity_ColorSpaceGrey;
 #line 307
 #line 311
 #line 315
-uniform highp vec4 _horizonColor;
-uniform highp vec4 WaveSpeed;
-uniform highp float _WaveScale;
-uniform highp vec4 _WaveOffset;
+uniform sampler2D _MainTex;
+uniform highp vec4 _TintColor;
+#line 331
+uniform highp vec4 _MainTex_ST;
+#line 340
 #line 332
-#line 344
-uniform sampler2D _BumpMap;
-uniform sampler2D _ColorControl;
-#line 91
-highp vec3 ObjSpaceViewDir( in highp vec4 v ) {
-    highp vec3 objSpaceCameraPos = ((_World2Object * vec4( _WorldSpaceCameraPos.xyz, 1.0)).xyz * unity_Scale.w);
-    return (objSpaceCameraPos - v.xyz);
-}
-#line 332
-v2f vert( in appdata v ) {
+v2f vert( in appdata_t v ) {
     v2f o;
-    highp vec4 s;
-    #line 336
-    o.pos = (glstate_matrix_mvp * v.vertex);
-    highp vec4 temp;
-    temp.xyzw = (((v.vertex.xzxz * _WaveScale) / unity_Scale.w) + _WaveOffset);
-    o.bumpuv[0] = (temp.xy * vec2( 0.4, 0.45));
-    #line 340
-    o.bumpuv[1] = temp.wz;
-    o.viewDir.xzy = normalize(ObjSpaceViewDir( v.vertex));
+    #line 335
+    o.vertex = (glstate_matrix_mvp * v.vertex);
+    o.color = v.color;
+    o.texcoord = ((v.texcoord.xy * _MainTex_ST.xy) + _MainTex_ST.zw);
     return o;
 }
+out highp vec4 xlv_COLOR;
 out highp vec2 xlv_TEXCOORD0;
-out highp vec2 xlv_TEXCOORD0_1;
-out highp vec3 xlv_TEXCOORD2;
 void main() {
     v2f xl_retval;
-    appdata xlt_v;
+    appdata_t xlt_v;
     xlt_v.vertex = vec4(gl_Vertex);
-    xlt_v.normal = vec3(gl_Normal);
+    xlt_v.color = vec4(gl_Color);
+    xlt_v.texcoord = vec2(gl_MultiTexCoord0);
     xl_retval = vert( xlt_v);
-    gl_Position = vec4(xl_retval.pos);
-    xlv_TEXCOORD0 = vec2(xl_retval.bumpuv[0]);
-    xlv_TEXCOORD0_1 = vec2(xl_retval.bumpuv[1]);
-    xlv_TEXCOORD2 = vec3(xl_retval.viewDir);
+    gl_Position = vec4(xl_retval.vertex);
+    xlv_COLOR = vec4(xl_retval.color);
+    xlv_TEXCOORD0 = vec2(xl_retval.texcoord);
 }
 
 
@@ -605,16 +444,17 @@ struct appdata_img {
     highp vec4 vertex;
     mediump vec2 texcoord;
 };
-#line 325
+#line 324
 struct v2f {
-    highp vec4 pos;
-    highp vec2 bumpuv[2];
-    highp vec3 viewDir;
-};
-#line 319
-struct appdata {
     highp vec4 vertex;
-    highp vec3 normal;
+    highp vec4 color;
+    highp vec2 texcoord;
+};
+#line 317
+struct appdata_t {
+    highp vec4 vertex;
+    highp vec4 color;
+    highp vec2 texcoord;
 };
 uniform highp vec4 _Time;
 uniform highp vec4 _SinTime;
@@ -706,44 +546,23 @@ uniform lowp vec4 unity_ColorSpaceGrey;
 #line 307
 #line 311
 #line 315
-uniform highp vec4 _horizonColor;
-uniform highp vec4 WaveSpeed;
-uniform highp float _WaveScale;
-uniform highp vec4 _WaveOffset;
-#line 332
-#line 344
-uniform sampler2D _BumpMap;
-uniform sampler2D _ColorControl;
-#line 272
-lowp vec3 UnpackNormal( in lowp vec4 packednormal ) {
-    #line 274
-    return ((packednormal.xyz * 2.0) - 1.0);
-}
-#line 346
+uniform sampler2D _MainTex;
+uniform highp vec4 _TintColor;
+#line 331
+uniform highp vec4 _MainTex_ST;
+#line 340
+#line 340
 mediump vec4 frag( in v2f i ) {
-    #line 348
-    mediump vec3 bump1 = UnpackNormal( texture( _BumpMap, i.bumpuv[0])).xyz;
-    mediump vec3 bump2 = UnpackNormal( texture( _BumpMap, i.bumpuv[1])).xyz;
-    mediump vec3 bump = ((bump1 + bump2) * 0.5);
-    mediump float fresnel = dot( i.viewDir, bump);
-    #line 352
-    mediump vec4 water = texture( _ColorControl, vec2( fresnel, fresnel));
-    mediump vec4 col;
-    col.xyz = mix( water.xyz, _horizonColor.xyz, vec3( water.w));
-    col.w = _horizonColor.w;
-    #line 356
-    return col;
+    return (((2.0 * i.color) * _TintColor) * texture( _MainTex, i.texcoord));
 }
+in highp vec4 xlv_COLOR;
 in highp vec2 xlv_TEXCOORD0;
-in highp vec2 xlv_TEXCOORD0_1;
-in highp vec3 xlv_TEXCOORD2;
 void main() {
     mediump vec4 xl_retval;
     v2f xlt_i;
-    xlt_i.pos = vec4(0.0);
-    xlt_i.bumpuv[0] = vec2(xlv_TEXCOORD0);
-    xlt_i.bumpuv[1] = vec2(xlv_TEXCOORD0_1);
-    xlt_i.viewDir = vec3(xlv_TEXCOORD2);
+    xlt_i.vertex = vec4(0.0);
+    xlt_i.color = vec4(xlv_COLOR);
+    xlt_i.texcoord = vec2(xlv_TEXCOORD0);
     xl_retval = frag( xlt_i);
     gl_FragData[0] = vec4(xl_retval);
 }
@@ -755,133 +574,74 @@ void main() {
 }
 Program "fp" {
 // Fragment combos: 1
-//   opengl - ALU: 21 to 21, TEX: 3 to 3
-//   d3d9 - ALU: 22 to 22, TEX: 3 to 3
-//   d3d11 - ALU: 15 to 15, TEX: 3 to 3, FLOW: 1 to 1
-//   d3d11_9x - ALU: 15 to 15, TEX: 3 to 3, FLOW: 1 to 1
+//   opengl - ALU: 4 to 4, TEX: 1 to 1
+//   d3d9 - ALU: 4 to 4, TEX: 1 to 1
+//   d3d11 - ALU: 3 to 3, TEX: 1 to 1, FLOW: 1 to 1
+//   d3d11_9x - ALU: 3 to 3, TEX: 1 to 1, FLOW: 1 to 1
 SubProgram "opengl " {
 Keywords { }
-Vector 0 [_horizonColor]
-SetTexture 0 [_BumpMap] 2D
-SetTexture 1 [_ColorControl] 2D
+Vector 0 [_TintColor]
+SetTexture 0 [_MainTex] 2D
 "!!ARBfp1.0
 OPTION ARB_precision_hint_fastest;
-# 21 ALU, 3 TEX
+OPTION ARB_fog_exp2;
+# 4 ALU, 1 TEX
 PARAM c[2] = { program.local[0],
-		{ 2, 1, 0.5 } };
+		{ 2 } };
 TEMP R0;
 TEMP R1;
-TEX R0.yw, fragment.texcoord[1], texture[0], 2D;
-TEX R1.yw, fragment.texcoord[0], texture[0], 2D;
-MAD R0.xy, R0.wyzw, c[1].x, -c[1].y;
-MAD R1.xy, R1.wyzw, c[1].x, -c[1].y;
-MUL R0.zw, R1.xyxy, R1.xyxy;
-ADD_SAT R0.z, R0, R0.w;
-MUL R1.zw, R0.xyxy, R0.xyxy;
-ADD_SAT R1.z, R1, R1.w;
-ADD R0.w, -R1.z, c[1].y;
-RSQ R1.z, R0.w;
-ADD R0.z, -R0, c[1].y;
-RSQ R0.w, R0.z;
-RCP R0.z, R1.z;
-RCP R1.z, R0.w;
-ADD R0.xyz, R1, R0;
-MUL R0.xyz, R0, c[1].z;
-DP3 R0.x, fragment.texcoord[2], R0;
-MOV result.color.w, c[0];
-TEX R0, R0.x, texture[1], 2D;
-ADD R1.xyz, -R0, c[0];
-MAD result.color.xyz, R0.w, R1, R0;
+TEX R0, fragment.texcoord[0], texture[0], 2D;
+MUL R1, fragment.color.primary, c[0];
+MUL R0, R1, R0;
+MUL result.color, R0, c[1].x;
 END
-# 21 instructions, 2 R-regs
+# 4 instructions, 2 R-regs
 "
 }
 
 SubProgram "d3d9 " {
 Keywords { }
-Vector 0 [_horizonColor]
-SetTexture 0 [_BumpMap] 2D
-SetTexture 1 [_ColorControl] 2D
+Vector 0 [_TintColor]
+SetTexture 0 [_MainTex] 2D
 "ps_2_0
-; 22 ALU, 3 TEX
+; 4 ALU, 1 TEX
 dcl_2d s0
-dcl_2d s1
-def c1, 2.00000000, -1.00000000, 1.00000000, 0.50000000
+def c1, 2.00000000, 0, 0, 0
+dcl v0
 dcl t0.xy
-dcl t1.xy
-dcl t2.xyz
-texld r0, t1, s0
-texld r1, t0, s0
-mov r0.x, r0.w
-mad_pp r0.xy, r0, c1.x, c1.y
-mul_pp r2.xy, r0, r0
-mov r1.x, r1.w
-mad_pp r1.xy, r1, c1.x, c1.y
-mul_pp r3.xy, r1, r1
-add_pp_sat r2.x, r2, r2.y
-add_pp_sat r3.x, r3, r3.y
-add_pp r2.x, -r2, c1.z
-add_pp r3.x, -r3, c1.z
-rsq_pp r2.x, r2.x
-rsq_pp r3.x, r3.x
-rcp_pp r1.z, r3.x
-rcp_pp r0.z, r2.x
-add_pp r0.xyz, r1, r0
-mul_pp r0.xyz, r0, c1.w
-dp3 r0.x, t2, r0
-mov r0.xy, r0.x
-texld r0, r0, s1
-add_pp r1.xyz, -r0, c0
-mad_pp r0.xyz, r0.w, r1, r0
-mov_pp r0.w, c0
+texld r0, t0, s0
+mul r1, v0, c0
+mul r0, r1, r0
+mul r0, r0, c1.x
 mov_pp oC0, r0
 "
 }
 
 SubProgram "d3d11 " {
 Keywords { }
-ConstBuffer "$Globals" 80 // 32 used size, 5 vars
-Vector 16 [_horizonColor] 4
+ConstBuffer "$Globals" 48 // 32 used size, 3 vars
+Vector 16 [_TintColor] 4
 BindCB "$Globals" 0
-SetTexture 0 [_BumpMap] 2D 0
-SetTexture 1 [_ColorControl] 2D 1
-// 20 instructions, 2 temp regs, 0 temp arrays:
-// ALU 15 float, 0 int, 0 uint
-// TEX 3 (0 load, 0 comp, 0 bias, 0 grad)
+SetTexture 0 [_MainTex] 2D 0
+// 5 instructions, 2 temp regs, 0 temp arrays:
+// ALU 3 float, 0 int, 0 uint
+// TEX 1 (0 load, 0 comp, 0 bias, 0 grad)
 // FLOW 1 static, 0 dynamic
 "ps_4_0
-eefiecedjkiahblgkpohjmcjommejflkkgaafaclabaaaaaapiadaaaaadaaaaaa
-cmaaaaaaleaaaaaaoiaaaaaaejfdeheoiaaaaaaaaeaaaaaaaiaaaaaagiaaaaaa
-aaaaaaaaabaaaaaaadaaaaaaaaaaaaaaapaaaaaaheaaaaaaaaaaaaaaaaaaaaaa
-adaaaaaaabaaaaaaadadaaaaheaaaaaaabaaaaaaaaaaaaaaadaaaaaaacaaaaaa
-adadaaaaheaaaaaaacaaaaaaaaaaaaaaadaaaaaaadaaaaaaahahaaaafdfgfpfa
-epfdejfeejepeoaafeeffiedepepfceeaaklklklepfdeheocmaaaaaaabaaaaaa
-aiaaaaaacaaaaaaaaaaaaaaaaaaaaaaaadaaaaaaaaaaaaaaapaaaaaafdfgfpfe
-gbhcghgfheaaklklfdeieefcaiadaaaaeaaaaaaamcaaaaaafjaaaaaeegiocaaa
-aaaaaaaaacaaaaaafkaaaaadaagabaaaaaaaaaaafkaaaaadaagabaaaabaaaaaa
-fibiaaaeaahabaaaaaaaaaaaffffaaaafibiaaaeaahabaaaabaaaaaaffffaaaa
-gcbaaaaddcbabaaaabaaaaaagcbaaaaddcbabaaaacaaaaaagcbaaaadhcbabaaa
-adaaaaaagfaaaaadpccabaaaaaaaaaaagiaaaaacacaaaaaaefaaaaajpcaabaaa
-aaaaaaaaegbabaaaabaaaaaaeghobaaaaaaaaaaaaagabaaaaaaaaaaadcaaaaap
-dcaabaaaaaaaaaaahgapbaaaaaaaaaaaaceaaaaaaaaaaaeaaaaaaaeaaaaaaaaa
-aaaaaaaaaceaaaaaaaaaialpaaaaialpaaaaaaaaaaaaaaaaapaaaaahicaabaaa
-aaaaaaaaegaabaaaaaaaaaaaegaabaaaaaaaaaaaddaaaaahicaabaaaaaaaaaaa
-dkaabaaaaaaaaaaaabeaaaaaaaaaiadpaaaaaaaiicaabaaaaaaaaaaadkaabaia
-ebaaaaaaaaaaaaaaabeaaaaaaaaaiadpelaaaaafecaabaaaaaaaaaaadkaabaaa
-aaaaaaaaefaaaaajpcaabaaaabaaaaaaegbabaaaacaaaaaaeghobaaaaaaaaaaa
-aagabaaaaaaaaaaadcaaaaapdcaabaaaabaaaaaahgapbaaaabaaaaaaaceaaaaa
-aaaaaaeaaaaaaaeaaaaaaaaaaaaaaaaaaceaaaaaaaaaialpaaaaialpaaaaaaaa
-aaaaaaaaapaaaaahicaabaaaaaaaaaaaegaabaaaabaaaaaaegaabaaaabaaaaaa
-ddaaaaahicaabaaaaaaaaaaadkaabaaaaaaaaaaaabeaaaaaaaaaiadpaaaaaaai
-icaabaaaaaaaaaaadkaabaiaebaaaaaaaaaaaaaaabeaaaaaaaaaiadpelaaaaaf
-ecaabaaaabaaaaaadkaabaaaaaaaaaaaaaaaaaahhcaabaaaaaaaaaaaegacbaaa
-aaaaaaaaegacbaaaabaaaaaadiaaaaakhcaabaaaaaaaaaaaegacbaaaaaaaaaaa
-aceaaaaaaaaaaadpaaaaaadpaaaaaadpaaaaaaaabaaaaaahbcaabaaaaaaaaaaa
-egbcbaaaadaaaaaaegacbaaaaaaaaaaaefaaaaajpcaabaaaaaaaaaaaagaabaaa
-aaaaaaaaeghobaaaabaaaaaaaagabaaaabaaaaaaaaaaaaajhcaabaaaabaaaaaa
-egacbaiaebaaaaaaaaaaaaaaegiccaaaaaaaaaaaabaaaaaadcaaaaajhccabaaa
-aaaaaaaapgapbaaaaaaaaaaaegacbaaaabaaaaaaegacbaaaaaaaaaaadgaaaaag
-iccabaaaaaaaaaaadkiacaaaaaaaaaaaabaaaaaadoaaaaab"
+eefiecedcmdhiofponpnanipbbcinneomgialopjabaaaaaalmabaaaaadaaaaaa
+cmaaaaaakaaaaaaaneaaaaaaejfdeheogmaaaaaaadaaaaaaaiaaaaaafaaaaaaa
+aaaaaaaaabaaaaaaadaaaaaaaaaaaaaaapaaaaaafmaaaaaaaaaaaaaaaaaaaaaa
+adaaaaaaabaaaaaaapapaaaagcaaaaaaaaaaaaaaaaaaaaaaadaaaaaaacaaaaaa
+adadaaaafdfgfpfagphdgjhegjgpgoaaedepemepfcaafeeffiedepepfceeaakl
+epfdeheocmaaaaaaabaaaaaaaiaaaaaacaaaaaaaaaaaaaaaaaaaaaaaadaaaaaa
+aaaaaaaaapaaaaaafdfgfpfegbhcghgfheaaklklfdeieefcoaaaaaaaeaaaaaaa
+diaaaaaafjaaaaaeegiocaaaaaaaaaaaacaaaaaafkaaaaadaagabaaaaaaaaaaa
+fibiaaaeaahabaaaaaaaaaaaffffaaaagcbaaaadpcbabaaaabaaaaaagcbaaaad
+dcbabaaaacaaaaaagfaaaaadpccabaaaaaaaaaaagiaaaaacacaaaaaadiaaaaai
+pcaabaaaaaaaaaaaegbobaaaabaaaaaaegiocaaaaaaaaaaaabaaaaaaaaaaaaah
+pcaabaaaaaaaaaaaegaobaaaaaaaaaaaegaobaaaaaaaaaaaefaaaaajpcaabaaa
+abaaaaaaegbabaaaacaaaaaaeghobaaaaaaaaaaaaagabaaaaaaaaaaadiaaaaah
+pccabaaaaaaaaaaaegaobaaaaaaaaaaaegaobaaaabaaaaaadoaaaaab"
 }
 
 SubProgram "gles " {
@@ -896,109 +656,50 @@ Keywords { }
 
 SubProgram "flash " {
 Keywords { }
-Vector 0 [_horizonColor]
-SetTexture 0 [_BumpMap] 2D
-SetTexture 1 [_ColorControl] 2D
+Vector 0 [_TintColor]
+SetTexture 0 [_MainTex] 2D
 "agal_ps
-c1 2.0 -1.0 1.0 0.5
+c1 2.0 0.0 0.0 0.0
 [bc]
-ciaaaaaaabaaapacabaaaaoeaeaaaaaaaaaaaaaaafaababb tex r1, v1, s0 <2d wrap linear point>
 ciaaaaaaaaaaapacaaaaaaoeaeaaaaaaaaaaaaaaafaababb tex r0, v0, s0 <2d wrap linear point>
-aaaaaaaaaaaaabacaaaaaappacaaaaaaaaaaaaaaaaaaaaaa mov r0.x, r0.w
-adaaaaaaadaaadacaaaaaafeacaaaaaaabaaaaaaabaaaaaa mul r3.xy, r0.xyyy, c1.x
-abaaaaaaadaaadacadaaaafeacaaaaaaabaaaaffabaaaaaa add r3.xy, r3.xyyy, c1.y
-aaaaaaaaabaaabacabaaaappacaaaaaaaaaaaaaaaaaaaaaa mov r1.x, r1.w
-adaaaaaaacaaadacabaaaafeacaaaaaaabaaaaaaabaaaaaa mul r2.xy, r1.xyyy, c1.x
-abaaaaaaacaaadacacaaaafeacaaaaaaabaaaaffabaaaaaa add r2.xy, r2.xyyy, c1.y
-adaaaaaaabaaabacacaaaaffacaaaaaaacaaaaffacaaaaaa mul r1.x, r2.y, r2.y
-adaaaaaaaaaaabacadaaaaffacaaaaaaadaaaaffacaaaaaa mul r0.x, r3.y, r3.y
-bfaaaaaaacaaaiacacaaaaaaacaaaaaaaaaaaaaaaaaaaaaa neg r2.w, r2.x
-adaaaaaaacaaaiacacaaaappacaaaaaaacaaaaaaacaaaaaa mul r2.w, r2.w, r2.x
-acaaaaaaabaaabacacaaaappacaaaaaaabaaaaaaacaaaaaa sub r1.x, r2.w, r1.x
-bfaaaaaaadaaaiacadaaaaaaacaaaaaaaaaaaaaaaaaaaaaa neg r3.w, r3.x
-adaaaaaaadaaaiacadaaaappacaaaaaaadaaaaaaacaaaaaa mul r3.w, r3.w, r3.x
-acaaaaaaaaaaabacadaaaappacaaaaaaaaaaaaaaacaaaaaa sub r0.x, r3.w, r0.x
-abaaaaaaabaaabacabaaaaaaacaaaaaaabaaaakkabaaaaaa add r1.x, r1.x, c1.z
-akaaaaaaabaaabacabaaaaaaacaaaaaaaaaaaaaaaaaaaaaa rsq r1.x, r1.x
-abaaaaaaaaaaabacaaaaaaaaacaaaaaaabaaaakkabaaaaaa add r0.x, r0.x, c1.z
-akaaaaaaaaaaabacaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaa rsq r0.x, r0.x
-afaaaaaaacaaaeacabaaaaaaacaaaaaaaaaaaaaaaaaaaaaa rcp r2.z, r1.x
-afaaaaaaadaaaeacaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaa rcp r3.z, r0.x
-abaaaaaaaaaaahacadaaaakeacaaaaaaacaaaakeacaaaaaa add r0.xyz, r3.xyzz, r2.xyzz
-adaaaaaaaaaaahacaaaaaakeacaaaaaaabaaaappabaaaaaa mul r0.xyz, r0.xyzz, c1.w
-bcaaaaaaaaaaabacacaaaaoeaeaaaaaaaaaaaakeacaaaaaa dp3 r0.x, v2, r0.xyzz
-aaaaaaaaaaaaadacaaaaaaaaacaaaaaaaaaaaaaaaaaaaaaa mov r0.xy, r0.x
-ciaaaaaaaaaaapacaaaaaafeacaaaaaaabaaaaaaafaababb tex r0, r0.xyyy, s1 <2d wrap linear point>
-bfaaaaaaabaaahacaaaaaakeacaaaaaaaaaaaaaaaaaaaaaa neg r1.xyz, r0.xyzz
-abaaaaaaabaaahacabaaaakeacaaaaaaaaaaaaoeabaaaaaa add r1.xyz, r1.xyzz, c0
-adaaaaaaabaaahacaaaaaappacaaaaaaabaaaakeacaaaaaa mul r1.xyz, r0.w, r1.xyzz
-abaaaaaaaaaaahacabaaaakeacaaaaaaaaaaaakeacaaaaaa add r0.xyz, r1.xyzz, r0.xyzz
-aaaaaaaaaaaaaiacaaaaaaoeabaaaaaaaaaaaaaaaaaaaaaa mov r0.w, c0
+adaaaaaaabaaapacahaaaaoeaeaaaaaaaaaaaaoeabaaaaaa mul r1, v7, c0
+adaaaaaaaaaaapacabaaaaoeacaaaaaaaaaaaaoeacaaaaaa mul r0, r1, r0
+adaaaaaaaaaaapacaaaaaaoeacaaaaaaabaaaaaaabaaaaaa mul r0, r0, c1.x
 aaaaaaaaaaaaapadaaaaaaoeacaaaaaaaaaaaaaaaaaaaaaa mov o0, r0
 "
 }
 
 SubProgram "d3d11_9x " {
 Keywords { }
-ConstBuffer "$Globals" 80 // 32 used size, 5 vars
-Vector 16 [_horizonColor] 4
+ConstBuffer "$Globals" 48 // 32 used size, 3 vars
+Vector 16 [_TintColor] 4
 BindCB "$Globals" 0
-SetTexture 0 [_BumpMap] 2D 0
-SetTexture 1 [_ColorControl] 2D 1
-// 20 instructions, 2 temp regs, 0 temp arrays:
-// ALU 15 float, 0 int, 0 uint
-// TEX 3 (0 load, 0 comp, 0 bias, 0 grad)
+SetTexture 0 [_MainTex] 2D 0
+// 5 instructions, 2 temp regs, 0 temp arrays:
+// ALU 3 float, 0 int, 0 uint
+// TEX 1 (0 load, 0 comp, 0 bias, 0 grad)
 // FLOW 1 static, 0 dynamic
 "ps_4_0_level_9_1
-eefiecedppekfddocmbpekididnlgbgnljjdkddcabaaaaaaaeagaaaaaeaaaaaa
-daaaaaaadiacaaaaeiafaaaanaafaaaaebgpgodjaaacaaaaaaacaaaaaaacpppp
-miabaaaadiaaaaaaabaacmaaaaaadiaaaaaadiaaacaaceaaaaaadiaaaaaaaaaa
-abababaaaaaaabaaabaaaaaaaaaaaaaaaaacppppfbaaaaafabaaapkaaaaaaaea
-aaaaialpaaaaaaaaaaaaiadpfbaaaaafacaaapkaaaaaaadpaaaaaaaaaaaaaaaa
-aaaaaaaabpaaaaacaaaaaaiaaaaaadlabpaaaaacaaaaaaiaabaaadlabpaaaaac
-aaaaaaiaacaaahlabpaaaaacaaaaaajaaaaiapkabpaaaaacaaaaaajaabaiapka
-ecaaaaadaaaacpiaaaaaoelaaaaioekaecaaaaadabaacpiaabaaoelaaaaioeka
-aeaaaaaeacaacbiaaaaappiaabaaaakaabaaffkaaeaaaaaeacaacciaaaaaffia
-abaaaakaabaaffkafkaaaaaeacaadiiaacaaoeiaacaaoeiaabaakkkaacaaaaad
-acaaciiaacaappibabaappkaahaaaaacacaaciiaacaappiaagaaaaacacaaceia
-acaappiaaeaaaaaeaaaacbiaabaappiaabaaaakaabaaffkaaeaaaaaeaaaaccia
-abaaffiaabaaaakaabaaffkafkaaaaaeaaaadiiaaaaaoeiaaaaaoeiaabaakkka
-acaaaaadaaaaciiaaaaappibabaappkaahaaaaacaaaaciiaaaaappiaagaaaaac
-aaaaceiaaaaappiaacaaaaadaaaachiaaaaaoeiaacaaoeiaafaaaaadaaaachia
-aaaaoeiaacaaaakaaiaaaaadaaaacdiaacaaoelaaaaaoeiaecaaaaadaaaacpia
-aaaaoeiaabaioekabcaaaaaeabaachiaaaaappiaaaaaoekaaaaaoeiaabaaaaac
-abaaciiaaaaappkaabaaaaacaaaicpiaabaaoeiappppaaaafdeieefcaiadaaaa
-eaaaaaaamcaaaaaafjaaaaaeegiocaaaaaaaaaaaacaaaaaafkaaaaadaagabaaa
-aaaaaaaafkaaaaadaagabaaaabaaaaaafibiaaaeaahabaaaaaaaaaaaffffaaaa
-fibiaaaeaahabaaaabaaaaaaffffaaaagcbaaaaddcbabaaaabaaaaaagcbaaaad
-dcbabaaaacaaaaaagcbaaaadhcbabaaaadaaaaaagfaaaaadpccabaaaaaaaaaaa
-giaaaaacacaaaaaaefaaaaajpcaabaaaaaaaaaaaegbabaaaabaaaaaaeghobaaa
-aaaaaaaaaagabaaaaaaaaaaadcaaaaapdcaabaaaaaaaaaaahgapbaaaaaaaaaaa
-aceaaaaaaaaaaaeaaaaaaaeaaaaaaaaaaaaaaaaaaceaaaaaaaaaialpaaaaialp
-aaaaaaaaaaaaaaaaapaaaaahicaabaaaaaaaaaaaegaabaaaaaaaaaaaegaabaaa
-aaaaaaaaddaaaaahicaabaaaaaaaaaaadkaabaaaaaaaaaaaabeaaaaaaaaaiadp
-aaaaaaaiicaabaaaaaaaaaaadkaabaiaebaaaaaaaaaaaaaaabeaaaaaaaaaiadp
-elaaaaafecaabaaaaaaaaaaadkaabaaaaaaaaaaaefaaaaajpcaabaaaabaaaaaa
-egbabaaaacaaaaaaeghobaaaaaaaaaaaaagabaaaaaaaaaaadcaaaaapdcaabaaa
-abaaaaaahgapbaaaabaaaaaaaceaaaaaaaaaaaeaaaaaaaeaaaaaaaaaaaaaaaaa
-aceaaaaaaaaaialpaaaaialpaaaaaaaaaaaaaaaaapaaaaahicaabaaaaaaaaaaa
-egaabaaaabaaaaaaegaabaaaabaaaaaaddaaaaahicaabaaaaaaaaaaadkaabaaa
-aaaaaaaaabeaaaaaaaaaiadpaaaaaaaiicaabaaaaaaaaaaadkaabaiaebaaaaaa
-aaaaaaaaabeaaaaaaaaaiadpelaaaaafecaabaaaabaaaaaadkaabaaaaaaaaaaa
-aaaaaaahhcaabaaaaaaaaaaaegacbaaaaaaaaaaaegacbaaaabaaaaaadiaaaaak
-hcaabaaaaaaaaaaaegacbaaaaaaaaaaaaceaaaaaaaaaaadpaaaaaadpaaaaaadp
-aaaaaaaabaaaaaahbcaabaaaaaaaaaaaegbcbaaaadaaaaaaegacbaaaaaaaaaaa
-efaaaaajpcaabaaaaaaaaaaaagaabaaaaaaaaaaaeghobaaaabaaaaaaaagabaaa
-abaaaaaaaaaaaaajhcaabaaaabaaaaaaegacbaiaebaaaaaaaaaaaaaaegiccaaa
-aaaaaaaaabaaaaaadcaaaaajhccabaaaaaaaaaaapgapbaaaaaaaaaaaegacbaaa
-abaaaaaaegacbaaaaaaaaaaadgaaaaagiccabaaaaaaaaaaadkiacaaaaaaaaaaa
-abaaaaaadoaaaaabejfdeheoiaaaaaaaaeaaaaaaaiaaaaaagiaaaaaaaaaaaaaa
-abaaaaaaadaaaaaaaaaaaaaaapaaaaaaheaaaaaaaaaaaaaaaaaaaaaaadaaaaaa
-abaaaaaaadadaaaaheaaaaaaabaaaaaaaaaaaaaaadaaaaaaacaaaaaaadadaaaa
-heaaaaaaacaaaaaaaaaaaaaaadaaaaaaadaaaaaaahahaaaafdfgfpfaepfdejfe
-ejepeoaafeeffiedepepfceeaaklklklepfdeheocmaaaaaaabaaaaaaaiaaaaaa
-caaaaaaaaaaaaaaaaaaaaaaaadaaaaaaaaaaaaaaapaaaaaafdfgfpfegbhcghgf
-heaaklkl"
+eefiecedoihbnmlengemhecchiljnikkkjmhelbnabaaaaaaheacaaaaaeaaaaaa
+daaaaaaaoeaaaaaammabaaaaeaacaaaaebgpgodjkmaaaaaakmaaaaaaaaacpppp
+hiaaaaaadeaaaaaaabaaciaaaaaadeaaaaaadeaaabaaceaaaaaadeaaaaaaaaaa
+aaaaabaaabaaaaaaaaaaaaaaaaacppppbpaaaaacaaaaaaiaaaaaaplabpaaaaac
+aaaaaaiaabaaadlabpaaaaacaaaaaajaaaaiapkaecaaaaadaaaaapiaabaaoela
+aaaioekaafaaaaadabaaapiaaaaaoelaaaaaoekaacaaaaadabaaapiaabaaoeia
+abaaoeiaafaaaaadaaaacpiaaaaaoeiaabaaoeiaabaaaaacaaaicpiaaaaaoeia
+ppppaaaafdeieefcoaaaaaaaeaaaaaaadiaaaaaafjaaaaaeegiocaaaaaaaaaaa
+acaaaaaafkaaaaadaagabaaaaaaaaaaafibiaaaeaahabaaaaaaaaaaaffffaaaa
+gcbaaaadpcbabaaaabaaaaaagcbaaaaddcbabaaaacaaaaaagfaaaaadpccabaaa
+aaaaaaaagiaaaaacacaaaaaadiaaaaaipcaabaaaaaaaaaaaegbobaaaabaaaaaa
+egiocaaaaaaaaaaaabaaaaaaaaaaaaahpcaabaaaaaaaaaaaegaobaaaaaaaaaaa
+egaobaaaaaaaaaaaefaaaaajpcaabaaaabaaaaaaegbabaaaacaaaaaaeghobaaa
+aaaaaaaaaagabaaaaaaaaaaadiaaaaahpccabaaaaaaaaaaaegaobaaaaaaaaaaa
+egaobaaaabaaaaaadoaaaaabejfdeheogmaaaaaaadaaaaaaaiaaaaaafaaaaaaa
+aaaaaaaaabaaaaaaadaaaaaaaaaaaaaaapaaaaaafmaaaaaaaaaaaaaaaaaaaaaa
+adaaaaaaabaaaaaaapapaaaagcaaaaaaaaaaaaaaaaaaaaaaadaaaaaaacaaaaaa
+adadaaaafdfgfpfagphdgjhegjgpgoaaedepemepfcaafeeffiedepepfceeaakl
+epfdeheocmaaaaaaabaaaaaaaiaaaaaacaaaaaaaaaaaaaaaaaaaaaaaadaaaaaa
+aaaaaaaaapaaaaaafdfgfpfegbhcghgfheaaklkl"
 }
 
 SubProgram "gles3 " {
@@ -1008,60 +709,31 @@ Keywords { }
 
 }
 
-#LINE 85
-
-	}
-}
-
-// -----------------------------------------------------------
-//  Old cards
-
-// three texture, cubemaps
-Subshader {
-	Tags { "RenderType"="Opaque" }
-	Pass {
-		Color (0.5,0.5,0.5,0.5)
-		SetTexture [_MainTex] {
-			Matrix [_WaveMatrix]
-			combine texture * primary
+#LINE 61
+ 
 		}
-		SetTexture [_MainTex] {
-			Matrix [_WaveMatrix2]
-			combine texture * primary + previous
-		}
-		SetTexture [_ColorControlCube] {
-			combine texture +- previous, primary
-			Matrix [_Reflection]
+	} 	
+	
+	// ---- Dual texture cards
+	SubShader {
+		Pass {
+			SetTexture [_MainTex] {
+				constantColor [_TintColor]
+				combine constant * primary
+			}
+			SetTexture [_MainTex] {
+				combine texture * previous DOUBLE
+			}
 		}
 	}
-}
-
-// dual texture, cubemaps
-Subshader {
-	Tags { "RenderType"="Opaque" }
-	Pass {
-		Color (0.5,0.5,0.5,0.5)
-		SetTexture [_MainTex] {
-			Matrix [_WaveMatrix]
-			combine texture
-		}
-		SetTexture [_ColorControlCube] {
-			combine texture +- previous, primary
-			Matrix [_Reflection]
+	
+	// ---- Single texture cards (does not do color tint)
+	SubShader {
+		Pass {
+			SetTexture [_MainTex] {
+				combine texture * primary
+			}
 		}
 	}
 }
-
-// single texture
-Subshader {
-	Tags { "RenderType"="Opaque" }
-	Pass {
-		Color (0.5,0.5,0.5,0)
-		SetTexture [_MainTex] {
-			Matrix [_WaveMatrix]
-			combine texture, primary
-		}
-	}
-}
-
 }
